@@ -16,13 +16,15 @@ package exec2
 
 import (
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/vmware/vic/pkg/vsphere/vm"
 )
 
 type ID uuid.UUID
+
+var NilID = ID(uuid.Nil)
 
 func GenerateID() ID {
 	return ID(uuid.New())
@@ -41,28 +43,34 @@ func (id ID) String() string {
 // All data in this struct must be data that is either immutable
 // or can be relied upon without having to query either the container guest
 // or the underlying infrastructure. Some of this state will be updated by events
-type container struct {
+// Immutable state is public and can be accessed directly. Mutable state is private
+type Container struct {
 	ConstantConfig
+	config Config
 
-	vm       vm.VirtualMachine
-	runState RunState
+	runState     RunState
+	processes    map[ID]*ProcessConfig
+	processState map[ID]*ProcessState
 
-	config       Config
-	mainProcess  ProcessConfig // container main process
-	execdProcess []ProcessConfig
+	filesToCopy []FileToCopy // cache if copy while not running
 
-	filesToCopy []FileToCopy // cache if copy while stopped
+	opaque map[string]interface{}
+
+	lock sync.Mutex // lock rw updates to the mutable state
 }
 
 // config that will be applied to a container on commit
-// Needs to be public as it will be shared by net, storage etc
+// All state is public as it will only ever be used/modified by a single thread
 type PendingCommit struct {
 	ConstantConfig
 
-	runState    RunState
-	config      Config
-	mainProcess ProcessConfig
-	filesToCopy []FileToCopy
+	ChangeID    int
+	RunState    RunState
+	Config      Config
+	MainProcess ProcessConfig
+	FilesToCopy []FileToCopy
+
+	Opaque map[string]interface{}
 }
 
 // config state that cannot change for the lifetime of the container
@@ -73,8 +81,10 @@ type ConstantConfig struct {
 
 // variable container configuration state
 type Config struct {
-	Name   string
-	Limits ResourceLimits
+	Name   *string
+	Limits *ResourceLimits
+	Attach *bool
+	Tty    *bool
 }
 
 // configuration state of a container process
@@ -82,11 +92,12 @@ type ProcessConfig struct {
 	ProcessID ID
 	WorkDir   string
 	ExecPath  string
-	ExecArgs  string
+	ExecArgs  []string
+	Env       []string
 }
 
-func NewProcessConfig(workDir string, execPath string, execArgs string) ProcessConfig {
-	return ProcessConfig{ProcessID: GenerateID(), WorkDir: workDir, ExecArgs: execArgs, ExecPath: execPath}
+func NewProcessConfig(workDir string, execPath string, execArgs []string, env []string) ProcessConfig {
+	return ProcessConfig{ProcessID: GenerateID(), WorkDir: workDir, ExecPath: execPath, ExecArgs: execArgs, Env: env}
 }
 
 type ProcessStatus int
@@ -97,24 +108,28 @@ const (
 	Exited
 )
 
+type ProcessState struct {
+	ProcessID ID
+	GuestPid  int
+	StartedAt time.Time
+	ProcessRunState
+}
+
 // runtime status of a container process
 type ProcessRunState struct {
-	ProcessID  ID
-	Status     ProcessStatus
-	GuestPid   int
-	ExitCode   int
-	ExitMsg    string
-	StartedAt  time.Time
-	FinishedAt time.Time
+	Status     *ProcessStatus
+	ExitCode   *int
+	ExitMsg    *string
+	FinishedAt *time.Time
 }
 
 type FileToCopy struct {
-	target url.URL
-	perms  int16
-	data   []byte
+	Target url.URL
+	Perms  int16
+	Data   []byte
 }
 
 type ResourceLimits struct {
-	MemoryMb int
-	CPUMhz   int
+	MemoryMb *int
+	CPUMhz   *int
 }

@@ -25,27 +25,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/vmware/vic/lib/portlayer/exec2"
 	"github.com/vmware/vic/lib/portlayer/exec2/remote"
+	"github.com/vmware/vic/lib/portlayer/exec2/vsphere"
 )
 
 type PortLayerRPCServer struct {
 }
 
-// A Handle can be anything, so this takes advantage of that by creating a sparse handle
-// to send to the client and using that sparse handle as a key in a hashtable which points to
-// rich handles created by the HandleFactory
-type SparseHandle exec2.Handle
-
+var handles exec2.SparseHandleFactory
 var lcTarget exec2.ContainerLifecycle
 
-//var lcQuery exec2.ContainerQuery
-var handles map[SparseHandle]exec2.Handle
-
 func init() {
-	pl := &exec2.PortLayerVsphere{}
-	pl.Init(nil, &exec2.BasicHandleFactory{})
+	pl := &vsphere.PortLayerVsphere{}
+	pl.Init(nil, &vsphere.CvmHandleFactory{})
 	lcTarget = pl
-	//lcQuery = lcTarget
-	handles = make(map[SparseHandle]exec2.Handle)
+	handles = exec2.NewSparseHandleFactory()
 }
 
 func main() {
@@ -61,65 +54,49 @@ func main() {
 	http.Serve(l, nil)
 }
 
-// A sparse handle is simply a random string
-func newSparseHandle() SparseHandle {
-	return SparseHandle(uuid.New())
-}
-
-func createSparseHandle(handle exec2.Handle) SparseHandle {
-	key := newSparseHandle()
-	handles[key] = handle
-	return key
-}
-
-func resolveSparseHandle(handle SparseHandle) exec2.Handle {
-	return handles[handle]
-}
-
-func refreshHandle(result *exec2.Handle, oldHandle SparseHandle, newHandle exec2.Handle, err error) error {
-	*result = createSparseHandle(newHandle)
-	delete(handles, oldHandle)
+func refreshHandle(result *exec2.Handle, oldHandle exec2.SparseHandle, newHandle exec2.Handle, err error) error {
+	*result = handles.RefreshSparseHandle(oldHandle, newHandle)
 	return err
 }
 
 func (*PortLayerRPCServer) CreateContainer(args remote.CreateArgs, result *exec2.Handle) error {
 	handle, err := lcTarget.CreateContainer(args.Name)
-	*result = createSparseHandle(handle)
+	*result = handles.CreateSparseHandle(handle)
 	return err
 }
 
 func (*PortLayerRPCServer) GetHandle(cid exec2.ID, result *exec2.Handle) error {
 	handle, err := lcTarget.GetHandle(cid)
-	*result = createSparseHandle(handle)
+	*result = handles.CreateSparseHandle(handle)
 	return err
 }
 
 func (*PortLayerRPCServer) CopyTo(args remote.CopyToArgs, result *exec2.Handle) error {
-	handle := resolveSparseHandle(args.Handle)
+	handle := handles.ResolveSparseHandle(args.Handle)
 	newHandle, err := lcTarget.CopyTo(handle, args.TargetDir, args.Fname, args.Perms, args.Data)
 	return refreshHandle(result, handle, newHandle, err)
 }
 
 func (*PortLayerRPCServer) SetEntryPoint(args remote.SetEntryPointArgs, result *exec2.Handle) error {
-	handle := resolveSparseHandle(args.Handle)
-	newHandle, err := lcTarget.SetEntryPoint(handle, args.WorkDir, args.ExecPath, args.Args)
+	handle := handles.ResolveSparseHandle(args.Handle)
+	newHandle, err := lcTarget.SetEntryPoint(handle, args.WorkDir, args.ExecPath, args.ExecArgs, args.Env)
 	return refreshHandle(result, handle, newHandle, err)
 }
 
 func (*PortLayerRPCServer) SetLimits(args remote.SetLimitsArgs, result *exec2.Handle) error {
-	handle := resolveSparseHandle(args.Handle)
+	handle := handles.ResolveSparseHandle(args.Handle)
 	newHandle, err := lcTarget.SetLimits(handle, args.MemoryMb, args.CPUMhz)
 	return refreshHandle(result, handle, newHandle, err)
 }
 
 func (*PortLayerRPCServer) SetRunState(args remote.SetRunStateArgs, result *exec2.Handle) error {
-	handle := resolveSparseHandle(args.Handle)
+	handle := handles.ResolveSparseHandle(args.Handle)
 	newHandle, err := lcTarget.SetRunState(handle, args.RunState)
 	return refreshHandle(result, handle, newHandle, err)
 }
 
 func (*PortLayerRPCServer) Commit(args remote.CommitArgs, result *exec2.ID) error {
-	cid, err := lcTarget.Commit(resolveSparseHandle(args.Handle))
+	cid, err := lcTarget.Commit(handles.ResolveSparseHandle(args.Handle))
 	*result = cid
 	return err
 }

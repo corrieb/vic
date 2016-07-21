@@ -72,11 +72,12 @@ type SetEntryPointArgs struct {
 	Handle   exec2.Handle
 	WorkDir  string
 	ExecPath string
-	Args     string
+	ExecArgs []string
+	Env      []string
 }
 
-func (p *PortLayerRPCClient) SetEntryPoint(handle exec2.Handle, workDir string, execPath string, args string) (exec2.Handle, error) {
-	epArgs := &SetEntryPointArgs{Handle: handle, WorkDir: workDir, ExecPath: execPath, Args: args}
+func (p *PortLayerRPCClient) SetEntryPoint(handle exec2.Handle, workDir string, execPath string, args []string, env []string) (exec2.Handle, error) {
+	epArgs := &SetEntryPointArgs{Handle: handle, WorkDir: workDir, ExecPath: execPath, ExecArgs: args, Env: env}
 	var reply exec2.Handle
 	err := p.client.Call("PortLayerRPCServer.SetEntryPoint", epArgs, &reply)
 	return reply, err

@@ -12,8 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package exec2
+package vsphere
+
+import (
+	"github.com/vmware/vic/pkg/vsphere/session"
+)
 
 // VmomiGateway represents an interface to a pre-authenticated Vmomi API
 type VmomiGateway interface {
+	// TODO: For now, just have the interface wrap the session object we're already using
+	GetCurrentSession() *session.Session
+}
+
+// TODO: Intermediate implementation until we have a better defined interface
+type SessionVmomiGateway struct {
+	session *session.Session
+}
+
+func (g *SessionVmomiGateway) GetCurrentSession() *session.Session {
+	return g.session
+}
+
+func NewVmomiGateway(session *session.Session) VmomiGateway {
+	return &SessionVmomiGateway{session: session}
 }

@@ -35,7 +35,10 @@ type ContainerLifecycle interface {
 
 	// SetEntryPoint sets the entry point for the container
 	// This is the executable, the lifecycle of which is tied to the container lifecycle
-	SetEntryPoint(handle Handle, workDir string, execPath string, execArgs string) (Handle, error)
+	SetEntryPoint(handle Handle, workDir string, execPath string, execArgs []string, env []string) (Handle, error)
+
+	// SetInteraction configures how a client might attach to the contianer
+	SetInteraction(handle Handle, attach bool, tty bool) (Handle, error)
 
 	// SetLimits sets resource limits on the container
 	// A value of -1 implies a default value, not unlimited
@@ -45,6 +48,10 @@ type ContainerLifecycle interface {
 	// SetRunState allows for the running state of a container to be modified
 	// Created is not a valid state and will return an error
 	SetRunState(handle Handle, runState RunState) (Handle, error)
+
+	// Associate any implementation-specific opaque data with the container
+	// Key should be known by both the client and the implementation
+	SetOpaque(handle Handle, key string, data interface{}) (Handle, error)
 
 	// Commit applies changes made to the Handle to either a new or running container
 	// Commit will fail if another client committed a modification after GetHandle was called
@@ -60,7 +67,7 @@ type ProcessLifecycle interface {
 	// ExecProcess executes a process in the container
 	// The lifecycle of the process is independent of the container main process
 	// The ID returned is a uuid handle to the process
-	ExecProcess(cid ID, workDir string, execPath string, execArgs string) (ID, error)
+	ExecProcess(cid ID, workDir string, execPath string, execArgs []string, env []string) (ID, error)
 
 	// Send a signal to the process
 	// Specifying a process ID will signal an exec'd process. Specifying the container ID will signal the main process
